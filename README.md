@@ -3,10 +3,16 @@
 
 **TL;DR** [Javadoc](https://docs.oracle.com/javase/9/javadoc/javadoc.htm) as data for Clojure.
 
-Developed as part of the [stacks](https://github.com/arrdem/stacks) project.
+This project is designed to feed Javadoc data into my [stacks](https://github.com/arrdem/stacks)
+project at some point in the future.
 
-Provides an alternative to `clojure.java.javadoc` for finding & browsing Javadocs, as well as tools
-for screen scraping Javadoc HTML into more useful data structures.
+The hope of stacks is that by getting all the entities related to the Clojure we write in a single
+namespace for convenience while writing documentation, we'll choose to write more of it and what we
+do write will be more usable by our peers because we'll choose to cross-reference because it's easy
+to do so. Or tools will be able to cross-reference for us.
+
+Provides an alternative to `clojure.java.javadoc` for finding & browsing Javadocs, as well as some
+experimental tools for screen scraping Javadoc HTML into more useful data structures.
 
 ## Demo: Finding & Browsing Javadocs
 
