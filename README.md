@@ -1,6 +1,8 @@
 # Microfiche
 <img align="right" src="https://github.com/arrdem/microfiche/raw/master/etc/microfiche.jpg" width=300/>
 
+[![Clojars Project](https://img.shields.io/clojars/v/me.arrdem/microfiche.svg)](https://clojars.org/me.arrdem/microfiche)
+
 **TL;DR** [Javadoc](https://docs.oracle.com/javase/9/javadoc/javadoc.htm) as data for Clojure.
 
 This project is designed to feed Javadoc data into my [stacks](https://github.com/arrdem/stacks)
