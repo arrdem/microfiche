@@ -88,7 +88,7 @@ Microfiche provides a way to try and convert back from rendered HTML to a data s
 both the HTML fragments of any rich formatted documentation and recovering as much abstract
 structure as possible about the documented class or interface.
 
-```
+```clj
 user> (require '[microfiche.scraper :refer [scrape-javadoc-for]])
 nil
 user> (scrape-javadoc-for java.net.HttpURLConnection)
