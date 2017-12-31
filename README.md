@@ -6,6 +6,10 @@
 This project is designed to feed Javadoc data into my [stacks](https://github.com/arrdem/stacks)
 project at some point in the future.
 
+The name is in snide reference to the longevity of the Javadoc tool, and the relatively archaic
+dialect of HTML which it emits. Yet much like microfiche there's much data worth the recovering in
+this format so here we are.
+
 The hope of stacks is that by getting all the entities related to the Clojure we write in a single
 namespace for convenience while writing documentation, we'll choose to write more of it and what we
 do write will be more usable by our peers because we'll choose to cross-reference because it's easy
