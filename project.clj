@@ -10,7 +10,7 @@
   :resource-paths    ["src/main/resources"]
 
   :dependencies [[org.clojure/clojure "1.9.0"]
-                 [me.arrdem/detritus "0.3.1.4"]
+                 [me.arrdem/detritus "0.3.2"]
                  [enlive "1.1.6"]]
 
   :profiles
