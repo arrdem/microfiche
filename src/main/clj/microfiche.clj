@@ -103,25 +103,16 @@
   {:pre [(Class/forName class-name)]}
   (URL. package-url (str (.replace class-name \. \/) ".html")))
 
-(def ^:dynamic *user-options*
-  "Reference containing options to be used by `#'javadoc` when none are provided.
+(defn locate-javadoc-for
+  "Attempts to find a URL which could be opened with a browser for
+  viewing the Javadocs of the given object or class.
 
-  The referenced options should be an options map per `#'default-options`.
-
-  Programmatic access should pass options explicitly rather than rely
-  on this behavior."
-  (atom default-options))
-
-(defn browse-javadoc-for
-  "Attempts to open a browser window viewing the Javadocs for the given object or class.
-
-  If no options are provided, uses `#'*user-options*` which defaults
-  to `#'default-options` unless modified or bound by the user.
+  If no options are provided, uses `#'default-options`.
 
   Programmatic access should pass options explicitly rather than rely
   on this behavior."
   ([class-or-object]
-   (browse-javadoc-for @*user-options* class-or-object))
+   (locate-javadoc-for default-options class-or-object))
   ([options class-or-object]
    (let [^Class c             (if (instance? Class class-or-object)
                                 class-or-object
@@ -129,10 +120,20 @@
          ^String package-name (str (.getName (.getPackage c)) ".")]
      (if-let [package-url (javadoc-url-for-package options package-name)]
        (let [javadoc-url (javadoc-url-for-class package-url (.getName c))]
-         (browse-url javadoc-url)
          javadoc-url)
-       {:type    ::error
-        :message "Could not find Javadoc for package"
-        :package package-name
-        :class   (.getName c)
-        :options options}))))
+       (throw (ex-info "Could not find Javadoc for package"
+                       {:package package-name
+                        :class   (.getName c)
+                        :options options}))))))
+
+(defn browse-javadoc-for
+  "Attempts to open a browser window viewing the Javadocs for the given object or class.
+
+  If no options are provided, uses `#'default-options`.
+
+  Programmatic access should pass options explicitly rather than rely
+  on this behavior."
+  ([class-or-object]
+   (browse-javadoc-for default-options class-or-object))
+  ([options class-or-object]
+   (browse-url (locate-javadoc-for options class-or-object))))

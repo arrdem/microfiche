@@ -15,7 +15,7 @@
 
 (defn ^URLConnection set-properties [^URLConnection req properties]
   (doseq [[k v] properties]
-    (.setRequestProperty req "User-Agent" "Mozilla/5.0"))
+    (.setRequestProperty req ^String k ^String v))
   req)
 
 (defn fetch-url*
@@ -94,17 +94,25 @@
      :name  (first content)
      :url   (URL. (as-url target-url) (:href attrs))}))
 
-(defn parse-javadoc-inheritance [url html]
-  (let [supers (map (partial classref url)
-                    (html/select html [:ul.inheritance :li :a]))
-        name   (first (:content (last (html/select html [:ul.inheritance :li]))))]
-    {:supers supers
-     :name   name}))
+(defn fieldref [{:keys [root-url target-url] :as opts}
+                {:keys [attrs content] :as a}]
+  (when (-> attrs :href)
+    {:type  :java/field
+     :class (classref opts (update-in a [:attrs :href] without-ref))
+     ;; FIXME (arrdem 2017-12-30):
+     ;;   can we extract the name from the URL?
+     :name  (first content)
+     :url   (URL. (as-url target-url) (:href attrs))}))
 
-(def summary-delimeters
-  {" =========== FIELD SUMMARY =========== " :fields
-   " ======== CONSTRUCTOR SUMMARY ======== " :constructors
-   " ========== METHOD SUMMARY =========== " :methods})
+(defn ctorref [{:keys [root-url target-url] :as opts}
+               {:keys [attrs content] :as a}]
+  (when (-> attrs :href)
+    {:type  :java/constructor
+     :class (classref opts (update-in a [:attrs :href] without-ref))
+     ;; FIXME (arrdem 2017-12-30):
+     ;;   can we extract the name from the URL?
+     :name  (first content)
+     :url   (URL. (as-url target-url) (:href attrs))}))
 
 (defn partition-by-comments [delimeters content]
   (loop [current                    nil
@@ -121,20 +129,6 @@
     (:content node)
     [node]))
 
-(defn drop-ul-li [node]
-  (as-> node %
-    (if (= (:tag %) :ul) (:content %))
-    (remove #{"\n"} %)
-    (first %)
-    (if (= (:tag %) :li) (:content %))
-    (remove #{"\n"} %)))
-
-(defn parse-inherited-fields [opts html]
-  "FIXME")
-
-(defn parse-inherited-constructors [opts html]
-  "FIXME")
-
 (def primitive-type?
   #{"boolean" "char" "byte" "int" "long" "float" "double" "void"})
 
@@ -144,155 +138,49 @@
    :primitive? true
    :name       name})
 
-(defn- recursive-type-parse [opts ^PeekPushBackIterator iter]
-  (let [generic (.next iter)]
-    (if (and (.hasNext iter)
-             (= "<" (.peek iter)))
-      (do (.next iter) ;; For side-effects
-          (loop [acc []]
-            (let [type (recursive-type-parse opts iter)]
-              (if (= ">" (.next iter))
-                {:type       :java/generic
-                 :class      generic
-                 :parameters (conj acc type)}
-                (recur (conj acc type))))))
-      generic)))
-
-(defn parse-type [opts html]
-  (let [tokens (->> html
-                    (mapcat (fn [node]
-                              (if (string? node)
-                                (re-seq #"[,<>]|[\s\n]+|boolean|byte|char|int|long|float|double|void" node)
-                                [node])))
-                    (remove #(and (string? %)
-                                  (re-matches #"^[\s\n]+$" %)))
-                    (map #(if (primitive-type? %)
-                            (->primitive-type %) %))
-                    (map #(if-not (and (map? %)
-                                       (= (:tag %) :a))
-                            %
-                            (classref opts %))))]
-    (try
-      (if tokens
-        (recursive-type-parse opts (PeekPushBackIterator. (.iterator tokens)))
-        (->primitive-type "void"))
-      (catch Exception e
-        (throw (ex-info "Unable to parse signature of `:tokens`."
-                        {:tokens tokens}
-                        e))))))
-
-(defn- parse-method-signature-list [opts ^PeekPushBackIterator iter]
-  (if (.hasNext iter)
-    (loop [acc []]
-      (let [type (recursive-type-parse opts iter)
-            acc* (conj acc type)]
-        (if (and (.hasNext iter)
-                 (= "," (.peek iter)))
-          (do (.next iter) ;; discard the ","
-              (recur acc*))
-          acc*)))
-    (->primitive-type "void")))
-
-(defn parse-method-signature [opts html]
-  (->> html
-       (mapcat (fn [node]
-                 (if (string? node)
-                   (re-seq #"[,<>\s]|boolean|byte|char|int|long|float|double|void" node)
-                   [node])))
-       (remove #(and (string? %)
-                     (re-matches #"^[\s\n]+$" %)))
-       (map #(if-not (and (map? %)
-                          (= (:tag %) :a))
-               %
-               (classref opts %)))
-       (.iterator)
-       (PeekPushBackIterator.)
-       (parse-method-signature-list opts)))
-
-(defn parse-method-detail
-  "Parse a method detail."
-  [opts html]
-  (let [[type description]   (->> (html/select html [:td])
-                                  (map :content))
-        type                 (-> type first :content)
-        [method & signature] (-> description
-                                 (html/select [:code])
-                                 first
-                                 :content)
-        method               (-> method :content first)
-        docs                 (html/select description [:div.block])]
-    (try {:type        ::method
-          :method      (methodref opts method)
-          :return-type (parse-type opts type)
-          :signature   (parse-method-signature opts signature)
-          :docs        docs}
-         (catch Exception e
-           (throw (ex-info "Failed to parse method"
-                           {:html      html
-                            :signature signature
-                            :docs      docs}
-                           e))))))
-
-(defn parse-inherited-methods
-  "Parse the \"methods inherited from\" sections of the overview.
-
-  This particular information is not available elsewhere."
-  [opts html]
+(defn parse-table [html]
   (as-> html %
-    (html/select % [:ul.blockList :li.blockList :> #{:a :h3 :code}])
+    ;; FIXME (arrdem 2017-12-30):
+    ;;   Can I kill this forward-looking bit? I think I can...
+    (html/select % [:ul.blockList :li.blockList :> #{:a :h3 :code :p :span :pre :div}])
     (drop 2 %)
-    (partition 3 %)
-    (mapcat #(map (comp (fn [m] (assoc m :inherited? true))
-                        (partial methodref opts))
-                  (html/select % [:code :a]))
-            %)))
+    (partition 3 %)))
 
-(defn parse-javadoc-summary [opts html]
-  (let [summary-html (->> (html/select html [:div.summary])
-                          (mapcat content*)
-                          (mapcat content*)
-                          (mapcat content*)
-                          (remove #{"\n"}))]
-    (as-> summary-html %
-      (partition-by-comments summary-delimeters %)
-      (map-vals % (partial mapcat drop-ul-li))
-      #_(update % :fields (partial parse-inherited-fields opts))
-      #_(update % :constructors (paprtial parse-inherited-constructors opts))
-      (update % :methods (partial parse-inherited-methods opts)))))
+(load "scrape_inheritance")
+(load "scrape_summary")
+(load "scrape_detail")
 
-(defn parse-javadoc-details [opts html]
-  (let [details-html (html/select html [:div.details])]))
-
-(defn parse-javadoc [{:keys [target-url] :as opts} html]
-  (let [{:keys [name supers]}             (parse-javadoc-inheritance opts html)
+(defn scrape-javadoc [{:keys [target-url] :as opts} html]
+  (let [{:keys [name supers]}       (parse-javadoc-inheritance opts html)
         {inherited-methods :methods
-         inherited-fields  :fields
-         inherited-ctors   :constructors} (parse-javadoc-summary opts html)]
+         inherited-fields  :fields} (parse-javadoc-summary opts html)
+        {constructors     :constructors
+         instance-methods :methods
+         instance-fields  :fields}  (parse-javadoc-details opts html)]
     {:type         ::javadoc
      :url          target-url
      :name         name
-     :supers       supers
-     :constructors inherited-ctors
-     :methods      inherited-methods
-     :fields       inherited-fields}))
+     :parents      supers
+     :constructors constructors
+     :methods      (concat inherited-methods instance-methods)
+     :fields       (concat inherited-fields instance-fields)}))
 
-(defn parse-javadoc-stream [opts ^InputStream stream]
-  (parse-javadoc opts (html/html-resource stream)))
+(defn scrape-javadoc-stream [opts ^InputStream stream]
+  (scrape-javadoc opts (html/html-resource stream)))
 
-(defn fetch-javadoc-for
+(defn scrape-javadoc-for
   "Attempts to fetch the Javadocs for the given object or class.
   Returns a buffer of HTML as a string.
 
   If a `:local-roots` mapping matches, but the corresponding `.html`
   file does not exist, falls back to the `:remote-roots` mapping if any.
 
-  If no options are provided, uses `#'*user-options*` which defaults
-  to `#'default-options` unless modified or bound by the user.
+  If no options are provided, uses `#'default-options`.
 
   Programmatic access should pass options explicitly rather than rely
   on this behavior."
   ([class-or-object]
-   (fetch-javadoc-for @*user-options* class-or-object))
+   (scrape-javadoc-for default-options class-or-object))
   ([options class-or-object]
    (let [^Class c     (if (instance? Class class-or-object)
                         class-or-object
@@ -303,17 +191,17 @@
            (let [javadoc-url (javadoc-url-for-class local-package-url class-name)
                  file        (io/file javadoc-url)]
              (when (.exists file)
-               (parse-javadoc-stream {:target-url javadoc-url
-                                      :root-url   local-package-url}
-                                     (FileInputStream. file)))))
+               (scrape-javadoc-stream {:target-url javadoc-url
+                                       :root-url   local-package-url}
+                                      (FileInputStream. file)))))
 
          (if-let [remote-package-url (javadoc-url-for-package* (:remote-roots options) package-name)]
            (let [javadoc-url (javadoc-url-for-class remote-package-url class-name)]
              ;; FIXME (arrdem 2017-12-29):
              ;;    Try to hit in a cache first for gods sake
-             (parse-javadoc-stream {:target-url javadoc-url
-                                    :root-url   remote-package-url}
-                                   (fetch-url javadoc-url))))
+             (scrape-javadoc-stream {:target-url javadoc-url
+                                     :root-url   remote-package-url}
+                                    (fetch-url javadoc-url))))
 
          {:type    ::error
           :message "Could not find Javadoc for package"
